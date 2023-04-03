@@ -4,16 +4,13 @@ Created on Mar 9, 2023 - 8:13 PM, EDT
 
 Filtering the annotation json file. Only keep the hand annotation and its hand-held objects
 JSON file format: each file is for one sequence (or clip)
-
-TODO:
-    [] Incorporate loading config file
-    [] Remove using of global variables
 """
 
 import json
 import os
 import glob
 from collections import Counter
+import argparse
 
 import yaml
 import numpy as np
@@ -31,8 +28,6 @@ INVALID_CONTACTS = ['hand-not-in-contact',
                     'none-of-the-above', 
                     'glove-not-in-contact', 
                     None]
-
-STATIC_OBJECT = {} # class_id -> name -> img_path
 
 def load_config(filename = 'config.yml'):
     with open(filename, 'r') as f:
@@ -259,12 +254,6 @@ def filter_annotation(data: dict, config: dict) -> dict:
         
         res['video_annotations'].append(new_anno)
         
-    # # Post process stats
-    # # Calculate avg coverage of all items
-    # for item, ls_coverage in stats['objects']:
-    #     stats['objects'][item] = sum(ls_coverage) / len(ls_coverage)
-    # stats['hands'] = dict(Counter(stats['hands']))
-    
     return res, stats
 
             
@@ -297,7 +286,7 @@ def main(dataset: str, out_path: str):
     ls_stats = []
     out_anno_dir = os.path.join(out_path, 'filtered_annotations')
     os.makedirs(out_anno_dir, exist_ok=True)
-    i = 0
+
     for json_file in tqdm(sorted(glob.glob(os.path.join(SPARSE_ANNO_PATH, dataset) + '/*.json'))):
         with open(json_file, 'rb') as f:
             data = json.load(f)
@@ -306,9 +295,6 @@ def main(dataset: str, out_path: str):
         ls_stats.append(stats)
         with open(os.path.join(out_anno_dir, json_file.split('/')[-1]), 'w') as f:
             json.dump(filtered_anno, f)
-        i += 1
-        if i == 2:
-            break
 
     stats = (merge_stats(ls_stats))
     
@@ -318,9 +304,19 @@ def main(dataset: str, out_path: str):
             yaml.dump(stats, f)
             
 if __name__ == '__main__':
-    out_path = '.'
-    # print(">>> TRAIN SET")
-    # main('train', out_path)
-    print(">>> VAL SET")
-    main('val', out_path)
-    print(">>> Done!")
+    parser = argparse.ArgumentParser(description="parameters for filter VISOR annotations")
+    parser.add_argument('-s', '--set', type=str, help="train or val, or both", default='val')
+    parser.add_argument('-o', '--out', type=str, help="path to the output directory", default='.')
+    args = parser.parse_args()
+    
+    assert args.set in ['train', 'val', 'both'], '--set must be one of train/val/both'
+    if args.set == 'train':
+        print(">>> TRAIN SET")
+        main('train', args.out)
+    elif args.set == 'val':
+        print(">>> VAL SET")
+        main('val', args.out)
+    else:
+        print(">>> BOTH SETS")
+        main('train', args.out)
+        main('val', args.out)
