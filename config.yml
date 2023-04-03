@@ -1,0 +1,40 @@
+stats: true # outputing statistic to terminal and files
+black_frames: null # remove empty masks, accepts null/lead/trail/both
+
+coverage_filter:
+  mode: bbox # bbox or mask
+  max_area: 0.25 # [0, 1]
+  min_area: 0 # [0, 1]
+
+static_filter:
+  categories: [
+    24, # hob
+    # 36, # bin -> some are still but most is moved
+    42, # top
+    # 46, # oven -> most is opening/closing oven door, so still valid
+    63, # sink
+    # 70, # dishwasher -> most is opening/closing door, so still valid
+    90, # microwave -> inconsistency when touching microwave door and microwave
+    92, # buttons (should be on wall or appliances and do not move)
+    110, # rack: ignored two trajectories (a rack which is actually a moka pot)
+    113, # freezer (upon checking, all hand-held obj is freezer not the door)
+    124, # washing machine
+    152, # slow cooker -> only one valid trajectory, most are invalid so we ommitted
+    # 153, # plug (should not move?) -> most is valid
+    157, # kitchen
+    159, # floor
+    179, # fan extractor
+    190, # knob (on appliances and should not move)
+    # 230, # ladder (only one trajectory and is actually valid .-.)
+    242, # wall
+    245, # tv
+    247, # shelf
+    263, # windows
+    267, # heater
+    285, # airer, hanger
+  ]
+  object_names: [
+    sink,
+    water,
+    stove,
+  ]
