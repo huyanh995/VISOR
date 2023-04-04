@@ -63,7 +63,6 @@ def imwrite_davis(out_path: str, img):
 def gen_davis_mask(subseq_name: str, frames:list, object_to_color: dict, dataset: str, out_path: str, resolution: tuple, hand: bool):
     stats = {'num_frames': len(frames),
              'num_objects': 0,
-             'hands': [],
              'objects': {},
              'categories': {}
             }
@@ -286,7 +285,6 @@ def main(dataset: str, out_path: str, resolution: tuple, hand: bool) -> None:
     stats = {'num_valid_subseqs': 0,
              'num_frames': 0,
              'num_objects': 0,
-             'hands': [],
              'objects': {},
              'categories': {}
             }
@@ -325,7 +323,6 @@ def main(dataset: str, out_path: str, resolution: tuple, hand: bool) -> None:
                 stats['num_valid_subseqs'] += 1
                 stats['num_frames'] += subseq_stats['num_frames']
                 stats['num_objects'] += subseq_stats['num_objects']
-                stats['hands'] += subseq_stats['hands']
                 
                 # Update objects and categories dict
                 for key in subseq_stats['objects']:
@@ -361,11 +358,13 @@ def main(dataset: str, out_path: str, resolution: tuple, hand: bool) -> None:
         
     # Output stats file
     if config['stats']:
-        stats['hands'] = dict(Counter(stats['hands']))
-        tmp = {k: round(float(sum(v) / len(v)), 2) for k, v in stats['objects'].items()}
-        stats['objects'] = tmp
-        tmp = {k: dict(Counter(v)) for k, v in stats['categories'].items()}
-        stats['categories'] = tmp
+        avg_coverage = {k: round(float(sum(v) / len(v)), 2) for k, v in stats['objects'].items()}
+        del stats['objects']
+        cnt_categories = {k: dict(Counter(v)) for k, v in stats['categories'].items()}
+        stats['categories'] = cnt_categories
+        for cat in cnt_categories:
+            for name, cnt in cnt_categories[cat].items():
+                stats['categories'][cat][name] = f'{cnt} {avg_coverage[name]}'
         
         # Write to yml file
         with open(os.path.join(out_path, f'{dataset}_stats.yml'), 'w') as f:
