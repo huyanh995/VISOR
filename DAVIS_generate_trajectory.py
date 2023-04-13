@@ -5,6 +5,7 @@ Created on Mar 13, 2023 - 1:41 AM, EDT
 Generate trajectories from VISOR annotation
 TODO:
     [] Add remove black frames feature
+    [] Add multi-processor to simultaneously process sub-sequences. Right now the code is quite slow
 """
 
 import json
@@ -288,8 +289,8 @@ def main(dataset: str, out_path: str, resolution: tuple, hand: bool) -> None:
              'objects': {},
              'categories': {}
             }
-
-    for json_file in tqdm(sorted(glob.glob(os.path.join(SPARSE_ANNO_PATH, dataset) + '/*.json'))):     
+    
+    for json_file in tqdm(sorted(glob.glob(os.path.join(SPARSE_ANNO_PATH, dataset) + '/*.json'))):  
         with open(json_file, 'rb') as f:
             data = json.load(f)
         
@@ -358,16 +359,18 @@ def main(dataset: str, out_path: str, resolution: tuple, hand: bool) -> None:
         
     # Output stats file
     if config['stats']:
-        avg_coverage = {k: round(float(sum(v) / len(v)), 2) for k, v in stats['objects'].items()}
+        avg_coverage = {k: round(float(sum(v) / len(v)), 6) for k, v in stats['objects'].items()}
         del stats['objects']
         cnt_categories = {k: dict(Counter(v)) for k, v in stats['categories'].items()}
         stats['categories'] = cnt_categories
-        for cat in cnt_categories:
+        for cat in cnt_categories.keys():
             for name, cnt in cnt_categories[cat].items():
                 stats['categories'][cat][name] = f'{cnt} {avg_coverage[name]}'
+        # Sort the categories to have nicer yaml file.
+        stats['categories'] = dict(sorted(stats['categories'].items()))
         
         # Write to yml file
-        with open(os.path.join(out_path, f'{dataset}_stats.yml'), 'w') as f:
+        with open(os.path.join(out_path, 'VISOR_2022', f'{dataset}_stats.yml'), 'w') as f:
             yaml.dump(stats, f, sort_keys=False)
 
 if __name__ == '__main__':
