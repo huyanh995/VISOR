@@ -48,6 +48,7 @@ def poly_to_bbox(polygons):
     # Get bounding boxes from a list of polygons
     bboxes = []
     for poly in polygons:
+        # TODO: Slow here, fix it
         x_min = min(p[0] for p in poly)
         y_min = min(p[1] for p in poly)
         x_max = max(p[0] for p in poly)

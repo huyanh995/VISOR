@@ -2,8 +2,7 @@ stats: true # outputing statistic to terminal and files
 black_frames: null # remove empty masks, accepts null/lead/trail/both
 
 coverage_filter:
-  mode: bbox # bbox o
-  r mask
+  mode: bbox # bbox or mask
   max_area: 0.25 # [0, 1]
   min_area: 0 # [0, 1]
 
