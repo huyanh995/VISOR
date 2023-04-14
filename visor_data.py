@@ -3,6 +3,11 @@ Huy Anh Nguyen, CS Stony Brook University
 Created on Apr 13, 2023 - 9:37 AM, EDT
 
 Refactor VISOR pre-processing code in OOP style
+Some observations:
+* all hands (id 300, 301) have 'in_contact_object' but NOT 'on_which_hand'
+* all gloves (id 303, 304) have 'in_contact_object' and 'on_which_hand'
+* SOME of glove (id 60) have 'in_contact_object' and 'on_which_hand'
+* id 60 has many instance names, not just 'glove'
 """
 
 import os
@@ -91,6 +96,13 @@ class VISORData:
                 data = json.load(f)
         
             for frame in data['video_annotations']: # Loop over frames in a sequence
+                # Manually correction for annotations
+                if 'P04_121_frame_0000075601' in frame['image']['name']:
+                    for entity in frame['annotations']:
+                        if entity['id'] == '6e234d3c52ecafb034c199642f6373eb':
+                            entity['on_which_hand'][-1] = 'right hand' # typo: rigth 
+                # TODO: 
+                #####################################
                 subseq_name = frame['image']['subsequence']
                 frame['name'] = frame['image']['name'].replace('.jpg', '')
                 
@@ -103,29 +115,6 @@ class VISORData:
                     self.resolution = cv2.imread(frame['image_path']).shape[:-1]
                     
                 del frame['image']
-                
-                # # Extract hand and object relation in each frame
-                # updated_annotations = {}
-                # for entity in frame['annotations']:
-                #     # Extract hands and objects in hand id
-                #     entity_id = entity['id']
-                #     if entity['class_id'] in VISORData.LEFT_HAND_IDS + VISORData.RIGHT_HAND_IDS:
-                #         side = 'left' if entity['class_id'] in VISORData.LEFT_HAND_IDS else 'right'
-                #         entity.setdefault(f'{side} hand', []).append(entity_id)
-
-                #         # entity must have 'in_contact_object' field, check for its value
-                #         if entity['in_contact_object'] not in VISORData.INVALID_CONTACTS:
-                #             # TODO: check if in_contact_object is glove
-                #             entity.setdefault('relations', []).append((entity_id, entity['in_contact_object']))
-                #             entity.setdefault(f'{side} object', []).append(entity['in_contact_object'])
-                        
-                #     else:
-                #         if not self._filter_object(entity):
-                #             continue # skip the not passed objects
-                        
-                #     updated_annotations[entity_id] = entity
-                
-                # frame['annotations'] = updated_annotations # Change from list to dict
                 
                 self.subsequences.setdefault(subseq_name, []).append(frame)
                 
@@ -168,45 +157,52 @@ class VISORData:
             - Not in black-list categories and items
             - Have reasonable size based on its mask or bbox area
             Both are in config file
-            
-        TODO: 
-            []
-            
         """
         # Extract hand and object relation in each frame
-        
         entities = {entity['id']: entity for entity in frame['annotations']} # for quick query
         updated_annotations = {}
         for entity_id, entity in entities.items():
-            # Extract hands and objects in hand id
-            if entity['class_id'] in VISORData.LEFT_HAND_IDS + VISORData.RIGHT_HAND_IDS:
-                side = 'left' if entity['class_id'] in VISORData.LEFT_HAND_IDS else 'right'
-                frame.setdefault(f'{side} hand', []).append(entity_id)
+            
+            object_id = entity.get('in_contact_object')
+            if entity['class_id'] in VISORData.HAND_IDS:
+                frame.setdefault(entity['name'], []).append(entity_id)
+                # check if there is an object in hand
+                check_object = (object_id not in VISORData.INVALID_CONTACTS
+                                and object_id in entities) # for P06_13_frame_0000002608 
 
-                # entity must have 'in_contact_object' field, check for its value
-                if (object_id := entity['in_contact_object']) not in VISORData.INVALID_CONTACTS:
-                    # Check if in_contact_object is glove
-                    if entities[object_id]['class_id'] not in VISORData.GLOVE_IDS:
-                        frame.setdefault('relations', []).append((entity_id, object_id))
-                        frame.setdefault(f'{side} object', []).append(object_id)
-                    else:
-                        # DEBUG region
-                        # Check glove is on designed hand
-                        # And have 'in_contact_object'
-                        if (on_which_hand := entities[object_id]['on_which_hand']) in VISORData.GLOVE_VALUES:
-                            if f'{side} hand' not in entities[object_id]['on_which_hand']:
-                                print(f'Wrong hand: {frame["name"]}')
-                                VISORData.draw_frame(frame)
-                            if len(entities[object_id]['on_which_hand']) > 1:
-                                print(f'On both hands {frame["name"]}')
-                            
-                        assert 'in_contact_object' in entities[object_id], 'gloves lack attribute'
-        
+                if check_object:
+                    # check if the object in hand is a glove on the same hand
+                    check_glove = ('on_which_hand' in entities[object_id] 
+                                    and entities[object_id]['on_which_hand'] in VISORData.GLOVE_VALUES # have valid values
+                                    and entity['name'] in entities[object_id]['on_which_hand']) # IMPORTANT
+
+                    if not check_glove:
+                        # hand contacts with normal object
+                        if object_id and self._filter_object(entities[object_id]):
+                            frame.setdefault('relations', []).append((entity_id, object_id))
+                            frame[entity['name'].replace('hand', 'object')] = (object_id, entities[object_id]['name'])
+                
+            elif 'on_which_hand' in entity and entity['on_which_hand'] in VISORData.GLOVE_VALUES:
+                # cover all gloves that is on hand(s)                    
+                if len(entity['on_which_hand']) > 1: # glove's on both hands
+                    frame.setdefault('left hand', []).append(entity_id)
+                    frame.setdefault('right hand', []).append(entity_id)
+                    if object_id and self._filter_object(entities[object_id]): # both hands -> glove -> object (rare case)
+                        frame['left object'] = (object_id, entities[object_id]['name'])
+                        frame['right object'] = (object_id, entities[object_id]['name'])
+                else:
+                    side = entity["on_which_hand"][0].split(" ")[0]
+                    frame.setdefault(f'{side} hand', []).append(entity_id)
+                    if object_id and self._filter_object(entities[object_id]):
+                        frame[f'{side} object'] = (object_id, entities[object_id]['name'])
+                    
+                frame.setdefault('relations', []).append((entity_id, object_id))
                 
             else:
+                # normal objects, filter based on object filter
                 if not self._filter_object(entity):
                     continue # skip the not passed objects
-                
+            
             updated_annotations[entity_id] = entity
         
         frame['annotations'] = updated_annotations
@@ -228,29 +224,22 @@ class VISORData:
             
         for name, frames in self.subsequences.items():
             trajectory = {'left': [], 'right': []}
-            # for idx in range(len(frames)):
-            #     frames[idx] = self._process_frame(frames[idx])
 
             for idx, frame in enumerate(frames):
                 # Process each frame: dict, frames: list
  
                 frames[idx] = self._process_frame(frame)
-                # Extract object-in-hand
-                left_objects = frame.get('left object', [])
-                right_objects = frame.get('right object', [])
                 
-                if len(left_objects) > 1 or len(right_objects) > 1:
-                    print(f'Found {name}')
-                    
-                # trajectory['left'].append(frame.get('left hand'))
-                # trajectory['right'].append(frame.get('right hand'))
+                # Extract object-in-hand
+                trajectory['left'].append(frame.get('left object', [None])[-1])
+                trajectory['right'].append(frame.get('right object', [None])[-1])
                 
             subseq = {'name': name, 
                     'frames': frames,
                     'trajectories': trajectory,
                     }
 
-            # return subseq
+            return subseq
     
     def get_subsequence_names(self):
         return list(self.subsequences.keys())
@@ -314,7 +303,7 @@ class VISORData:
         overlay = cv2.addWeighted(mask, 0.35, img, 1, 0)
         
         # Write image
-        cv2.imwrite(file_name, overlay)
+        cv2.imwrite(os.path.join('./debugs', file_name), overlay)
 
 
 if __name__ == '__main__':
@@ -322,7 +311,7 @@ if __name__ == '__main__':
     DENSE_ROOT = None
     DENSE_IMG_ROOT = None
     
-    SUBSET = 'train'
+    SUBSET = 'val'
     
     # Load config
     with open('config.yml', 'r') as f:
