@@ -18,12 +18,7 @@ import yaml
 import cv2
 import numpy as np
 from tqdm import tqdm
-from utils import process_poly, poly_to_bbox
-
-class Frame:
-    def __init__(self):
-        raise NotImplementedError
-
+from utils import process_poly, poly_to_bbox, calculate_segment_area
 
 class VISORData:
     HAND_IDS = [300, 301] # Left hand, right hand
@@ -39,6 +34,9 @@ class VISORData:
                     None]
     
     def __init__(self, config, sparse_root, subset = 'val', dense_root = None, dense_img_path = None):
+        self.name = 'VISOR'
+        self.year = '2022'
+        
         self.subset = subset
         self.resolution = None
         
@@ -50,8 +48,8 @@ class VISORData:
         self.mode = config['coverage_filter']['mode']
         self.max_area = config['coverage_filter']['max_area']
         self.min_area = config['coverage_filter']['min_area']
-        self.rm_class_ids = config['static_filter']['categories'] 
-        self.rm_names = config['static_filter']['object_names']
+        self.bl_class_ids = config['static_filter']['categories']   # black-listed categories
+        self.bl_names = config['static_filter']['object_names']     # black-listed names
 
         # Dense annotation section
         self.dense_root = dense_root
@@ -60,7 +58,7 @@ class VISORData:
         self.dense_img_root = dense_img_path
         
         if dense_root:
-            self.fps = config['dense_sample']['fps'] # sample rate for Dense augmentation
+            self.desired_fps = config['dense_sample']['fps'] # sample rate for Dense augmentation
         
         self._check_directories()
         self._load_subsequences()
@@ -87,21 +85,25 @@ class VISORData:
         
     def _load_subsequences(self):
         """
-        This function should process **frames** only
+        Load annotation .json file and group frames into subsequences
         """
         self.subsequences = dict()
+        
+        # For stats of original dataset
+        n_objects = 0
+        n_frames = 0
         
         for json_file in tqdm(sorted(glob.glob(os.path.join(self.sparse_anno_root, '*.json')))):
             with open(json_file, 'r') as f:
                 data = json.load(f)
-        
+
             for frame in data['video_annotations']: # Loop over frames in a sequence
                 # Manually correction for annotations
                 if 'P04_121_frame_0000075601' in frame['image']['name']:
                     for entity in frame['annotations']:
                         if entity['id'] == '6e234d3c52ecafb034c199642f6373eb':
                             entity['on_which_hand'][-1] = 'right hand' # typo: rigth 
-                # TODO: 
+
                 #####################################
                 subseq_name = frame['image']['subsequence']
                 frame['name'] = frame['image']['name'].replace('.jpg', '')
@@ -115,41 +117,38 @@ class VISORData:
                     self.resolution = cv2.imread(frame['image_path']).shape[:-1]
                     
                 del frame['image']
-                
+                n_objects += len(frame['annotations'])
+    
                 self.subsequences.setdefault(subseq_name, []).append(frame)
+            n_frames += len(data['video_annotations'])
                 
-        
+        # Display stats after loading dataset annotations
+        print("-" * 20)
+        print("Stats for original {} set".format(self.subset))
+        print("Total subsequences: {}".format(len(self.subsequences)))
+        print("Total frames: {}".format(n_frames))
+        print("Total objects: {}".format(n_objects))
+        print("-" * 20)
+    
     def _filter_object(self, entity):
         """
         Filter object based on its size or black list
         Input: entity in a frame
         """
         # Filter based on black list
-        if entity['class_id'] in self.rm_class_ids \
-            or entity['name'] in self.rm_names:
+        if entity['class_id'] in self.bl_class_ids \
+            or entity['name'] in self.bl_names:
             return False
             
         # Filter based on coverage area
-        mask = np.zeros(self.resolution)
-        
-        if self.mode == 'mask':
-            polygons = process_poly(entity['segments'])
-            cv2.fillPoly(mask, polygons, (1, 1, 1))
-            coverage = np.sum(mask) / np.prod(self.resolution)
-            
-        elif self.mode == 'bbox':
-            bboxes = poly_to_bbox(entity['segments'])
-            for bbox in bboxes:
-                bbox = list(map(round, bbox)) # convert float to int
-                cv2.rectangle(mask, (bbox[0], bbox[1]), (bbox[2], bbox[3]), 1, -1) # -1 mean fill entirely rectangle
-            coverage = np.sum(mask) / np.prod(self.resolution)
+        coverage = calculate_segment_area(entity['segments'], self.resolution, self.mode) / np.prod(self.resolution)
         
         if self.min_area > coverage or self.max_area < coverage:
             return False
         return True
 
 
-    def _process_frame(self, frame):
+    def _process_sparse_frame(self, frame):
         """
         Filter entities based on rules:
         - Always keep hands and gloves (not the category 60 glove)
@@ -157,7 +156,27 @@ class VISORData:
             - Not in black-list categories and items
             - Have reasonable size based on its mask or bbox area
             Both are in config file
+            
+        frame = {
+            'name': name of the image, in format Pxx_
+            'image_path': absolute path to the .jpg image
+            'type': type of frame, sparse or dense
+            'annotations': dict of id and object in a frame
+            'left hand': list of id of left hand or glove on left hand
+            'left object': id of object in contact with left hand
+            'right hand': list of id of right hand or glove on right hand
+            'right object': id of object in contact with right hand
+            'relations': list of (hand/glove_id, object_id) where object is the in-contact object
+        }
         """
+        # Add fields to frame
+        frame['type'] = 'sparse'
+        frame['left hand'] = []
+        frame['left object'] = None
+        frame['right hand'] = []
+        frame['right object'] = None
+        frame['relations'] = []
+        
         # Extract hand and object relation in each frame
         entities = {entity['id']: entity for entity in frame['annotations']} # for quick query
         updated_annotations = {}
@@ -165,7 +184,7 @@ class VISORData:
             
             object_id = entity.get('in_contact_object')
             if entity['class_id'] in VISORData.HAND_IDS:
-                frame.setdefault(entity['name'], []).append(entity_id)
+                frame.setdefault(entity['name'], []).append(entity_id) # FIXME: what is it for?
                 # check if there is an object in hand
                 check_object = (object_id not in VISORData.INVALID_CONTACTS
                                 and object_id in entities) # for P06_13_frame_0000002608 
@@ -196,7 +215,7 @@ class VISORData:
                     if object_id and self._filter_object(entities[object_id]):
                         frame[f'{side} object'] = (object_id, entities[object_id]['name'])
                     
-                frame.setdefault('relations', []).append((entity_id, object_id))
+                frame.append((entity_id, object_id)) # TODO: do we still need relation?
                 
             else:
                 # normal objects, filter based on object filter
@@ -218,28 +237,30 @@ class VISORData:
         raise NotImplementedError
     
     
-    def get_subsequence(self, augment=False):
-        if augment:
-            assert self.dense_root and self.dense_img_root, 'Dense annotations and dense frames not found'
-            
+    def get_subsequence(self, augment=False):        
         for name, frames in self.subsequences.items():
             trajectory = {'left': [], 'right': []}
 
-            for idx, frame in enumerate(frames):
+            for idx, frame in enumerate(sorted(frames, key = lambda k: k['name'])):
                 # Process each frame: dict, frames: list
- 
-                frames[idx] = self._process_frame(frame)
+                frames[idx] = self._process_sparse_frame(frame)
                 
                 # Extract object-in-hand
                 trajectory['left'].append(frame.get('left object', [None])[-1])
                 trajectory['right'].append(frame.get('right object', [None])[-1])
                 
+            if augment:
+                assert self.dense_root and self.dense_img_root, 'Dense annotations and dense frames not found'
+                # TODO: Add dense frame based on spare frame information
+                # remember to add frame['type'] = 'dense'
+                pass
+            
             subseq = {'name': name, 
                     'frames': frames,
                     'trajectories': trajectory,
                     }
 
-            return subseq
+            yield subseq
     
     def get_subsequence_names(self):
         return list(self.subsequences.keys())
@@ -250,7 +271,7 @@ class VISORData:
         """
         frames = self.subsequences[name]
         for idx in range(len(frames)):
-            frames[idx] = self._process_frame(frames[idx])
+            frames[idx] = self._process_sparse_frame(frames[idx])
             
         return frames
     
@@ -259,14 +280,15 @@ class VISORData:
     def draw_frame(frame):
         # Draw a mask and overlay its on images
         colors = [
-                    (128, 0, 0),    # maroon
                     (255, 0, 0),    # red
-                    (0, 255, 0),    # lime
-                    (255, 255, 0),  # yellow
                     (0, 0, 255),    # blue
+                    (0, 255, 0),    # green
+                    (128, 0, 0),    # maroon
+                    (255, 255, 0),  # yellow
+                    (0, 255, 0),    # lime
                     (255, 0, 255),  # fuchsia
-                    (128, 0, 128),  # purple
                     (0, 255, 255),  # aqua
+                    (128, 0, 128),  # purple
                     (0, 128, 128),  # teal
                 ]
         file_name = frame['name'] + '.jpg'
@@ -316,7 +338,7 @@ if __name__ == '__main__':
     # Load config
     with open('config.yml', 'r') as f:
         config = yaml.safe_load(f)
-        
+    
     # Check config validity
     assert config['coverage_filter']['mode'] in ['bbox', 'mask'], 'Coverage mode must be either bbox or mask'
     assert 0 <= config['coverage_filter']['max_area'] <= 1, 'Max area coverage must be in range [0, 1]'

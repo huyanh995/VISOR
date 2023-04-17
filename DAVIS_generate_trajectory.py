@@ -85,7 +85,7 @@ def gen_davis_mask(subseq_name: str, frames:list, object_to_color: dict, dataset
         frame_name = f'{idx:05}'
         
         # Generate relation map  
-        relation_map[frame_name + '.jpg'] = {}
+        relation_map[frame_name + '.jpg'] = {}git 
         if hand:
             relation_map[frame_name + '.jpg']['relations'] = []
             for hand_id, object_id in frame['relations']:

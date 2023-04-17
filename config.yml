@@ -1,5 +1,7 @@
 stats: true # outputing statistic to terminal and files
 black_frames: null # remove empty masks, accepts null/lead/trail/both
+window: 2 # number of consecutive frames that an object appears to be consider a trajectory
+max_length: 6 # length of a subsequence to be consider. Note that 6 is for sparse annotation.
 
 coverage_filter:
   mode: mask # bbox or mask

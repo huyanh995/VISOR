@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.ndimage import label
+import cv2
 
 def mask_to_single_bbox(mask, obj_index):
     # Output bounding box from a 2D mask
@@ -70,4 +71,22 @@ def calculate_bbox_area(bbox):
     height = bbox[3] - bbox[1]
     
     return width * height
+
+def calculate_segment_area(segment, resolution, mode):
+    assert mode in ['mask', 'bbox']
+    mask = np.zeros(resolution)
+    if mode == 'mask':
+        polygons = process_poly(segment)
+        cv2.fillPoly(mask, polygons, (1, 1, 1))
+        area = np.sum(mask)
+        
+    elif mode == 'bbox':
+        bboxes = poly_to_bbox(segment)
+        for bbox in bboxes:
+            bbox = list(map(round, bbox)) # convert float to int
+            cv2.rectangle(mask, (bbox[0], bbox[1]), (bbox[2], bbox[3]), 1, -1) # -1 mean fill entirely rectangle
+        area = np.sum(mask)
+        
+    return area
+        
 
