@@ -246,8 +246,8 @@ class VISORData:
                 frames[idx] = self._process_sparse_frame(frame)
                 
                 # Extract object-in-hand
-                trajectory['left'].append(frame.get('left object', [None])[-1])
-                trajectory['right'].append(frame.get('right object', [None])[-1])
+                trajectory['left'].append(frame.get('left object', None))
+                trajectory['right'].append(frame.get('right object', None))
                 
             if augment:
                 assert self.dense_root and self.dense_img_root, 'Dense annotations and dense frames not found'
