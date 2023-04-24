@@ -3,10 +3,14 @@ black_frames: null # remove empty masks, accepts null/lead/trail/both
 window: 2 # number of consecutive frames that an object appears to be consider a trajectory
 max_length: 6 # length of a subsequence to be consider. Note that 6 is for sparse annotation.
 
+instance_filter:
+  iterations: 5 # dilate iterations for overlapping hand/object instance filter
+  overlap_threshold: 0
+
 coverage_filter:
   mode: mask # bbox or mask
   max_area: 0.15 # [0, 1]
-  min_area: 0.01 # [0, 1]
+  min_area: 0.00 # [0, 1]
 
 static_filter:
   categories: [

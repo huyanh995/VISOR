@@ -36,10 +36,14 @@ def mask_to_multi_bbox(mask, obj_index):
 
 
 def process_poly(segments: list) -> list:
+    """
+    Convert list of polygons to list of numpy array
+    """
     polygons = []
     for poly in segments:
         if poly == []:
-            polygons.append([[0.0, 0.0]])
+            print("DEBUG")
+            polygons.append([[0.0, 0.0]]) # Empty polygon?
         polygons.append(np.array(poly, dtype = np.int32))
     
     return polygons
@@ -89,4 +93,9 @@ def calculate_segment_area(segment, resolution, mode):
         
     return area
         
-
+def segment_iou(segA, segB):
+    intersection = np.logical_and(segA, segB)
+    union = np.logical_or(segA, segB)
+    iou = np.sum(intersection) / np.sum(union) if np.sum(union) != 0 else 0
+    
+    return iou
