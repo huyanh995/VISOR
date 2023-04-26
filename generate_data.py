@@ -92,9 +92,9 @@ class VISORFormatter:
                 self.stats['num_entities'] += len(frame['annotations']) 
                 
                 # Get coverage stats from sparse annotation only
-                for entity in frame['annotations'].values():
-                    self.stats['categories'].setdefault(entity['class_id'], {}) \
-                                            .setdefault(entity['name'], []).append(entity['coverage'])
+                # for entity in frame['annotations'].values():
+                #     self.stats['categories'].setdefault(entity['class_id'], {}) \
+                #                             .setdefault(entity['name'], []).append(entity['coverage'])
                 # ============
                 
                 # file_name = f'{idx:05}'
@@ -223,9 +223,13 @@ class VISORFormatter:
                     cv2.fillPoly(mask, hand_polygons, (hand_color, hand_color, hand_color))
                     object_to_color[f'{side} hand'] = hand_color
                     color = max(color, hand_color + 1)
-                    self.stats['categories'].setdefault(f'{side} hand', []).append(hand_coverage)
+                    hand_class = 300 if side == 'left' else 301
+                    # merged hand and glove as hand class.
+                    self.stats['categories'].setdefault(hand_class, {})\
+                                            .setdefault(f'{side} hand', []).append(hand_coverage)
                     
                 object_name = frame['annotations'][object_id]['name']
+                object_class = frame['annotations'][object_id]['class_id']
                 object_polygons = process_poly(frame['annotations'][object_id]['segments'])
                 
                 raw_info[f'{side} object'] = object_name
@@ -240,7 +244,8 @@ class VISORFormatter:
                 
                 # Recalculate object coverage and add into stats
                 object_coverage = np.sum(np.where(mask == object_color, 1, 0)) / np.prod(mask.shape)
-                self.stats['categories'].setdefault(object_name, []).append(object_coverage)
+                self.stats['categories'].setdefault(object_class, {})\
+                                        .setdefault(object_name, []).append(object_coverage)
                 
                 # Add to relation mapping
                 self.relation_mapping[subseq_name].setdefault(frame['name'], []).append([hand_color, object_color])
@@ -442,7 +447,7 @@ class VISORFormatter:
             res += process_poly(segment)
         return res
     
-        
+    
     @staticmethod
     def _load_config(filename = 'config.yml'):
         with open(filename, 'r') as f:
@@ -482,6 +487,8 @@ class VISORFormatter:
         return res
 
 if __name__ == '__main__':
+    # TODO: Add args
+    
     data_config = {
         'sparse_root' : '../GroundTruth-SparseAnnotations',
         'dense_root' : '../Interpolations-DenseAnnotations',
