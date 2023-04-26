@@ -42,7 +42,7 @@ class VISORData:
                  sparse_root: str,
                  subset: str = 'val', 
                  dense_root: str = None, 
-                 dense_img_path: str = None):
+                 dense_img_root: str = None):
         
         self.name = 'VISOR'
         self.year = '2022' # To pair with DAVIS evaluation code
@@ -68,13 +68,50 @@ class VISORData:
             self.dense_json_files = sorted(glob.glob(os.path.join(self.dense_root, self.subset, '*', '*.json')))
             self.dense_anno = (None, {}) # current dense annotation, because it's so huge, can not load all at once
             self.desired_fps = config['dense_sample']['fps'] # sample rate for Dense augmentation
-            self.dense_img_root = dense_img_path
+            self.dense_img_root = dense_img_root
             
         self._check_directories()
         self._load_subsequences()
 
-        
-    def _check_directories(self):
+    def get_subsequence(self, augment: bool = False) -> dict:        
+        for name, sparse_frames in self.subsequences.items():
+            dense_frames = {}
+            trajectory = {'left': [], 'right': []}
+            logging.info(f'Subsequence {name}')
+            
+            # Load Sparse annotation first
+            for idx, frame in enumerate(sorted(sparse_frames, key = lambda k: k['name'])):
+                # Process each frame: dict, sparse_frames: list
+                logging_msg = f'Frame #{idx}: {[obj["name"] for obj in frame["annotations"]]} -> '
+                
+                sparse_frames[idx] = self._process_sparse_frame(frame)
+                logging_msg += str([obj["name"] + ": " + str(round(obj["coverage"], 5)) for obj in sparse_frames[idx]["annotations"].values()])
+                logging.info(logging_msg)
+                
+                # Extract object-in-hand
+                trajectory['left'].append(frame['left object'][-1])
+                trajectory['right'].append(frame['right object'][-1])
+                
+            if augment:
+                sparse_names = [frame['name'] for frame in sparse_frames]
+                self._load_dense_annotation(name)
+                for i in range(1, len(sparse_names)):
+                    key = (sparse_names[i-1], sparse_names[i])
+                    # note: not all the sparse frame pairs have corresponding dense annotations
+                    dense_frames[key] = self.dense_anno[1].get(key, [])
+            
+            subseq = {'name': name, 
+                    'frames': {'sparse': sparse_frames, 'dense': dense_frames}, 
+                    'trajectories': trajectory, 
+                    }
+            
+            yield subseq
+    
+    def get_subsequence_names(self):
+        return list(self.subsequences.keys())
+    
+    # Internal use methods
+    def _check_directories(self) -> None:
         """
         Check if the sparse root and (optional) dense_root follow the original VISOR
         """
@@ -86,11 +123,10 @@ class VISORData:
         
         if self.dense_root:
             if not os.path.exists(self.dense_root):
-                raise FileNotFoundError(f'VISOR Dense not found in the specified directory')
+                raise FileNotFoundError(f'VISOR Dense Annotations not found in the specified directory')
 
-            # if not os.path.exists(self.dense_img_path):
-            #     raise FileExistsError(f'VISOR Dense Frames not found')
-        
+            if not os.path.exists(self.dense_img_root):
+                raise FileExistsError(f'VISOR Dense Frames not found')
         
     def _load_subsequences(self) -> None:
         """
@@ -116,7 +152,7 @@ class VISORData:
                 #####################################
                 subseq_name = frame['image']['subsequence']
                 frame['name'] = frame['image']['name'].replace('.jpg', '')
-                frame['subsequence'] = frame['image']['subsequence'] # FIXME: for debug only, remove later if needed
+                frame['subsequence'] = frame['image']['subsequence']
                 
                 # Update image_path to absolute path
                 frame['image_path'] = os.path.join(self.sparse_img_root, 
@@ -156,7 +192,6 @@ class VISORData:
         if self.min_area > coverage or self.max_area < coverage:
             return False
         return True
-
 
     def _process_sparse_frame(self, frame: dict) -> None:
         """
@@ -272,7 +307,7 @@ class VISORData:
             dense_frames = {}
             for frame in data['video_annotations']:
                 video_name_path = frame['image']['image_path'].split('_')[0]
-                frame['image_path'] = os.path.join(self.dense_img_root, self.subset, video_name_path, frame['image']['image_path'].replace('.png', '.jpg')) # TODO: check file exist it when have dense anno folder
+                frame['image_path'] = os.path.join(self.dense_img_root, self.subset, video_name_path, frame['image']['image_path'].replace('.png', '.jpg'))
                 
                 if not os.path.isfile(frame['image_path']):
                     continue
@@ -299,44 +334,6 @@ class VISORData:
                 dense_frames.setdefault((first_frame, end_frame), []).append(frame)
             self.dense_anno = (name, dense_frames) 
         
-    
-    def get_subsequence(self, augment: bool = False):        
-        for name, sparse_frames in self.subsequences.items():
-            dense_frames = {}
-            trajectory = {'left': [], 'right': []}
-            logging.info(f'Subsequence {name}')
-            
-            # Load Sparse annotation first
-            for idx, frame in enumerate(sorted(sparse_frames, key = lambda k: k['name'])):
-                # Process each frame: dict, sparse_frames: list
-                logging_msg = f'Frame #{idx}: {[obj["name"] for obj in frame["annotations"]]} -> '
-                
-                sparse_frames[idx] = self._process_sparse_frame(frame)
-                logging_msg += str([obj["name"] + ": " + str(round(obj["coverage"], 5)) for obj in sparse_frames[idx]["annotations"].values()])
-                logging.info(logging_msg)
-                
-                # Extract object-in-hand
-                trajectory['left'].append(frame['left object'][-1])
-                trajectory['right'].append(frame['right object'][-1])
-                
-            if augment:
-                sparse_names = [frame['name'] for frame in sparse_frames]
-                self._load_dense_annotation(name)
-                for i in range(1, len(sparse_names)):
-                    key = (sparse_names[i-1], sparse_names[i])
-                    # note: not all the sparse frame pairs have corresponding dense annotations
-                    dense_frames[key] = self.dense_anno[1].get(key, []) # TODO: Consider sampling from here?
-            
-            subseq = {'name': name, 
-                    'frames': {'sparse': sparse_frames, 'dense': dense_frames}, 
-                    'trajectories': trajectory, 
-                    }
-            
-            yield subseq
-    
-    def get_subsequence_names(self):
-        return list(self.subsequences.keys())
-    
     def __getitem__(self, name):
         """
         Get raw annotation based on subseq namex

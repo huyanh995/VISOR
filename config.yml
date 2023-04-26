@@ -47,4 +47,4 @@ static_filter:
   ]
 
 dense_sample:
-  fps: 6 # desired fps for sampling
+  fps: 10 # desired fps for sampling
