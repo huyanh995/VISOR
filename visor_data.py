@@ -202,7 +202,7 @@ class VISORData:
         # Display stats after loading dataset annotations
         print('-' * 20)
         print(f'Stats for original {self.subset} set')
-        print(f'Total subsequences: {self.subsequences}')
+        print(f'Total subsequences: {len(self.subsequences)}')
         print(f'Total frames: {n_frames}')
         print(f'Total objects: {n_objects}')
         print('-' * 20)
@@ -266,9 +266,7 @@ class VISORData:
         updated_annotations = {}
 
         # Extract hand and object relation in each frame
-
         for entity_id, entity in entities.items():
-
             object_id = entity.get('in_contact_object')
             if entity['class_id'] in VISORData.HAND_IDS:
                 frame[entity['name']].append(entity_id) # add hand id to 'left hand' or 'right hand'
@@ -299,14 +297,14 @@ class VISORData:
                         and self._filter_object(entities[object_id])): # both hands -> glove -> object (rare case)
                         frame['left object'] = (object_id, entities[object_id]['name'])
                         frame['right object'] = (object_id, entities[object_id]['name'])
+                        frame['relations'].append((entity_id, object_id))
                 else:
                     # only on one hand
                     frame.setdefault(entity['on_which_hand'][0], []).append(entity_id)
                     if (object_id not in VISORData.INVALID_CONTACTS
                         and self._filter_object(entities[object_id])):
-                        frame[entity['on_which_hand'][0]] = (object_id, entities[object_id]['name'])
-
-                frame['relations'].append((entity_id, object_id))
+                        frame[entity['on_which_hand'][0].replace('hand', 'object')] = (object_id, entities[object_id]['name'])
+                        frame['relations'].append((entity_id, object_id))
 
             else:
                 # normal objects, filter based on object filter
@@ -439,7 +437,7 @@ if __name__ == '__main__':
     DENSE_ROOT = '../Interpolations-DenseAnnotations'
     DENSE_IMG_ROOT = '../rgb_frames'
 
-    SUBSET = 'val'
+    SUBSET = 'train'
 
     # Load config
     with open('config.yml', 'r') as f:
@@ -452,7 +450,7 @@ if __name__ == '__main__':
 
     data = VISORData(config, SPARSE_ROOT, SUBSET, DENSE_ROOT, DENSE_IMG_ROOT)
 
-    sequence = list(data.get_subsequence(True))
+    sequence = list(data.get_subsequence(False))
 
 
 

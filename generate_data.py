@@ -254,16 +254,16 @@ class VISORFormatter:
                     logging.error(f'Subseq {subseq_name} {side} side: object but no hand')
 
                 if len(hand_ids) > 1:
-                        ls_segments = [frame['annotations'][hand_id]['segments'] for hand_id in hand_ids]
-                        ls_names = [frame['annotations'][hand_id]['name'] for hand_id in hand_ids]
-                        hand_polygons = VISORFormatter._merge_polygons(ls_segments)
-                        hand_coverage = sum([frame['annotations'][hand_id]['coverage'] for hand_id in hand_ids])
+                    ls_segments = [frame['annotations'][hand_id]['segments'] for hand_id in hand_ids]
+                    ls_names = [frame['annotations'][hand_id]['name'] for hand_id in hand_ids]
+                    hand_polygons = VISORFormatter._merge_polygons(ls_segments)
+                    hand_coverage = sum([frame['annotations'][hand_id]['coverage'] for hand_id in hand_ids])
 
-                        # add hand and glove separatedly into raw_info
-                        # because dense annotations do not have hand-object relation
-                        raw_info[f'{side} hand'] = ls_names
-                        for name, segment in zip(ls_names, ls_segments):
-                            raw_info['annotations'][name] = process_poly(segment)
+                    # add hand and glove separatedly into raw_info
+                    # because dense annotations do not have hand-object relation
+                    raw_info[f'{side} hand'] = ls_names
+                    for name, segment in zip(ls_names, ls_segments):
+                        raw_info['annotations'][name] = process_poly(segment)
 
                 else:
                     hand_polygons = process_poly(frame['annotations'][hand_ids[0]]['segments']) # only 1 element in the list
@@ -559,7 +559,7 @@ if __name__ == '__main__':
     data_config = {
         'sparse_root' : args.sparse_root,
         'dense_root' : args.dense_root,
-        'dense_img_root' : args.dense_img,
+        'dense_img_dir' : args.dense_img,
         'subset' : args.set,
         }
 
